@@ -183,6 +183,10 @@ DS.RESTAdapter = DS.Adapter.extend({
     }
   },
 
+  shouldPreserveDirtyRecords: function(association) {
+    return association.kind === 'hasMany';
+  },
+
   /**
     Serializes the record and sends it to the server.
 
