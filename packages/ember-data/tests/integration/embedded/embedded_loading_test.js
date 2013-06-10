@@ -8,6 +8,10 @@ var App = Ember.Namespace.create({
 
 var Person = App.Person = DS.Model.extend();
 
+var Avatar = App.Avatar = DS.Model.extend({
+  filename: DS.attr('string')
+});
+
 var Comment = App.Comment = DS.Model.extend({
   user: DS.belongsTo(Person)
 });
@@ -24,6 +28,7 @@ var Post = App.Post = DS.Model.extend({
 
 Person.reopen({
   name: DS.attr('string'),
+  avatar: DS.hasOne(Avatar),
   group: DS.belongsTo(Group),
   comments: DS.hasMany(Comment)
 });
@@ -47,6 +52,7 @@ module("Embedded Loading", {
 
   teardown: function() {
     Ember.lookup = originalLookup;
+    store.destroy();
   }
 });
 
@@ -362,7 +368,7 @@ test("updating a embedded record with a belongsTo relationship is serialize corr
     strictEqual(comment.get('user'), peter, "updated relationship references the globally addressable record");
 
     var commentJSON = serializer.serialize(comment, { includeId: true });
-    deepEqual(commentJSON, { id: 1, post_id: null, user: { id: 4, name: "Peter Pan", group: null }});
+    deepEqual(commentJSON, { id: 1, post_id: null, user: { id: 4, name: "Peter Pan", group: null, avatar_id: null }});
 });
 
 test("sideloading a record with an embedded hasMany relationship", function() {
@@ -392,4 +398,76 @@ test("sideloading a record with an embedded hasMany relationship", function() {
   var person = store.find(Person, 2);
   var comment = store.find(Comment, 3);
   equal(Ember.get(person, 'comments.firstObject'), comment);
+});
+
+test("A nested hasOne relationship can be marked as embedded via the `map` API", function() {
+  Adapter.map(Comment, {
+    user: { embedded: 'load' }
+  });
+
+  Adapter.map(Person, {
+    avatar: { embedded: 'load' }
+  });
+
+  adapter = Adapter.create();
+  store.set('adapter', adapter);
+
+  adapter.load(store, Comment, {
+    id: 1,
+    user: {
+      id: 2,
+      name: "Yehuda Katz",
+      avatar: {
+        id: 3,
+        filename: "photo.jpg"
+      }
+    }
+  });
+
+  var comment = store.find(Comment, 1);
+  var avatar = store.find(Avatar, 3);
+
+  strictEqual(avatar.get('filename'), "photo.jpg", "Avatar is addressable by its ID despite being loaded via embedding");
+  strictEqual(comment.get('user.avatar'), avatar, "relationship references the globally addressable record");
+});
+
+test("An embedded hasOne relationship is serialized correctly on update", function() {
+  Adapter.map(Person, {
+    avatar: { embedded: 'load' }
+  });
+
+  adapter = Adapter.create();
+  serializer = adapter.get('serializer');
+  store.set('adapter', adapter);
+
+  adapter.load(store, Person, {
+    id: 1,
+    name: "Yehuda Katz",
+    avatar: {
+      id: 2,
+      filename: "photo.jpg"
+    }
+  });
+  adapter.load(store, Avatar, {
+    id: 3,
+    filename: "photo2.jpg"
+  });
+
+  var person = store.find(Person, 1);
+  var avatar1 = store.find(Avatar, 2);
+  var avatar2 = store.find(Avatar, 3);
+
+  person.set('avatar', avatar2);
+  strictEqual(person.get('avatar'), avatar2, "updated relationship references the globally addressable record");
+
+  var personJSON = serializer.serialize(person, { includeId: true });
+  deepEqual(personJSON, {
+    avatar: {
+      id: 3,
+      filename: "photo2.jpg"
+    },
+    id: 1,
+    group_id: null,
+    name: "Yehuda Katz"
+  });
 });

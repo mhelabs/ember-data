@@ -7,11 +7,47 @@ require('ember-data/transforms/json_transforms');
 
 var get = Ember.get, set = Ember.set;
 
+
+/**
+ @method addBelongsToOrHasOne
+ @param hash
+ @param record
+ @param key
+ @param relationship
+ */
+var addBelongsToOrHasOne = function(hash, record, key, relationship) {
+  var type = record.constructor,
+    name = relationship.key,
+    value = null,
+    includeType = (relationship.options && relationship.options.polymorphic),
+    embeddedChild,
+    child,
+    id;
+
+  if (this.embeddedType(type, name)) {
+    if (embeddedChild = get(record, name)) {
+      value = this.serialize(embeddedChild, { includeId: true, includeType: includeType });
+    }
+
+    hash[key] = value;
+  } else {
+    child = get(record, relationship.key);
+    id = get(child, 'id');
+
+    if (relationship.options && relationship.options.polymorphic && !Ember.isNone(id)) {
+      this.addBelongsToOrHasOnePolymorphic(hash, key, id, child.constructor);
+    } else {
+      hash[key] = this.serializeId(id);
+    }
+  }
+};
+
 /**
   @class JSONSerializer
   @namespace DS
   @extends DS.Serializer
 */
+
 DS.JSONSerializer = DS.Serializer.extend({
   init: function() {
     this._super();
@@ -131,6 +167,16 @@ DS.JSONSerializer = DS.Serializer.extend({
   },
 
   /**
+   @method extractHasOne
+   @param type
+   @param hash
+   @param key
+   */
+  extractHasOne: function(type, hash, key) {
+    return hash[key];
+  },
+
+  /**
     @method extractBelongsTo
     @param type
     @param hash
@@ -159,39 +205,8 @@ DS.JSONSerializer = DS.Serializer.extend({
     return null;
   },
 
-  /**
-    @method addBelongsTo
-    @param hash
-    @param record
-    @param key
-    @param relationship
-  */
-  addBelongsTo: function(hash, record, key, relationship) {
-    var type = record.constructor,
-        name = relationship.key,
-        value = null,
-        includeType = (relationship.options && relationship.options.polymorphic),
-        embeddedChild,
-        child,
-        id;
-
-    if (this.embeddedType(type, name)) {
-      if (embeddedChild = get(record, name)) {
-        value = this.serialize(embeddedChild, { includeId: true, includeType: includeType });
-      }
-
-      hash[key] = value;
-    } else {
-      child = get(record, relationship.key);
-      id = get(child, 'id');
-
-      if (relationship.options && relationship.options.polymorphic && !Ember.isNone(id)) {
-        this.addBelongsToPolymorphic(hash, key, id, child.constructor);
-      } else {
-        hash[key] = this.serializeId(id);
-      }
-    }
-  },
+  addBelongsTo: addBelongsToOrHasOne,
+  addHasOne: addBelongsToOrHasOne,
 
   /**
     @method addBelongsToPolymorphic
@@ -200,7 +215,7 @@ DS.JSONSerializer = DS.Serializer.extend({
     @param id
     @param type
   */
-  addBelongsToPolymorphic: function(hash, key, id, type) {
+  addBelongsToOrHasOnePolymorphic: function(hash, key, id, type) {
     var keyForId = this.keyForPolymorphicId(key),
         keyForType = this.keyForPolymorphicType(key);
     hash[keyForId] = id;
