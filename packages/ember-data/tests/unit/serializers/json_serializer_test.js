@@ -5,6 +5,7 @@ var MockModel = Ember.Object.extend({
     this.materializedAttributes = {};
     this.hasMany = {};
     this.belongsTo = {};
+    this.hasOne = {};
   },
 
   eachAttribute: function(callback, binding) {
@@ -39,6 +40,10 @@ var MockModel = Ember.Object.extend({
 
   materializeBelongsTo: function(name, id) {
     this.belongsTo[name] = id;
+  },
+
+  materializeHasOne: function(name, id) {
+    this.hasOne[name] = id;
   }
 });
 
@@ -49,11 +54,13 @@ module("DS.JSONSerializer - Mapping API", {
     serializer = DS.JSONSerializer.create();
     Person = MockModel.extend();
     window.Address = MockModel.extend();
+    window.Heart = MockModel.extend();
   },
 
   teardown: function() {
     serializer.destroy();
     window.Address = null;
+    window.Heart = null;
   }
 });
 
@@ -109,13 +116,16 @@ test("Mapped attributes should be used when materializing a record from JSON.", 
 });
 
 test("Mapped relationships should be used when serializing a record to JSON.", function() {
-  expect(8);
+  expect(12);
 
-  Person.relationships = { addresses: { key: 'addresses', kind: 'hasMany', type: window.Address }};
-  window.Address.relationships = { person: { key: 'person', kind: 'belongsTo', type: Person }};
+  // Person.associations = { addresses: 'hasMany', heart: 'hasOne' };
+  Person.relationships = { addresses: { key: 'addresses', kind: 'hasMany', type: window.Address }, heart: { key: 'heart', kind: 'hasOne', type: window.Heart } };
+  // window.Address.associations = { person: 'belongsTo' };
+  window.Address.relationships = { person: { key: 'person', kind: 'belongsTo', type: Person } };
 
   serializer.map(Person, {
-    addresses: { key: 'ADDRESSES!' }
+    addresses: { key: 'ADDRESSES!' },
+    heart: { key: '<3' }
   });
 
   serializer.map('Address', {
@@ -151,6 +161,19 @@ test("Mapped relationships should be used when serializing a record to JSON.", f
     });
   };
 
+  serializer.addHasOne = function(hash, record, key, relationship) {
+    ok(typeof hash === 'object', "a hash to build is passed");
+    equal(record, person, "the record to serialize should be passed");
+    equal(key, '<3', "the key to add to the hash respects the mapping");
+
+    // The mocked record uses a simplified relationship description
+    deepEqual(relationship, {
+      kind: 'hasOne',
+      key: 'heart',
+      type: window.Heart
+    });
+  };
+
   serializer.serialize(person);
   serializer.serialize(address);
 });
@@ -174,11 +197,12 @@ test("the id of a belongsTo relationship is serialized by using #serializeId", f
 });
 
 test("mapped relationships are respected when materializing a record from JSON", function() {
-  Person.relationships = { addresses: { key: 'addresses', kind: 'hasMany', type: window.Address }};
+  Person.relationships = { addresses: { key: 'addresses', kind: 'hasMany', type: window.Address }, heart: { key: 'heart', kind: 'hasOne', type: window.Heart } };
   window.Address.relationships = { person: { key: 'person', kind: 'belongsTo', type: Person }};
 
   serializer.map(Person, {
-    addresses: { key: 'ADDRESSES!' }
+    addresses: { key: 'ADDRESSES!' },
+    heart: { key: '<3' }
   });
 
   serializer.map('Address', {
@@ -189,7 +213,8 @@ test("mapped relationships are respected when materializing a record from JSON",
   var address = window.Address.create();
 
   serializer.materialize(person, {
-    'ADDRESSES!': [ 1, 2, 3 ]
+    'ADDRESSES!': [ 1, 2, 3 ],
+    '<3': 1
   });
 
   serializer.materialize(address, {
@@ -198,6 +223,13 @@ test("mapped relationships are respected when materializing a record from JSON",
 
   deepEqual(person.hasMany, {
     addresses: map([ 1, 2, 3 ], function(id) { return {id: id, type: window.Address};})
+  });
+
+  deepEqual(person.hasOne, {
+    heart: {
+      id: 1,
+      type: window.Heart
+    }
   });
 
   deepEqual(address.belongsTo, {
@@ -318,7 +350,7 @@ test("keyForPolymorphicId and keyForPolymorphicType should be called when serial
   deepEqual(value, {id: 2, type: 'dog'}, 'The serializer can extract a polymorphic belongsTo');
 
   hash = {};
-  serializer.addBelongsToPolymorphic(hash, 'pet', 3, Cat);
+  serializer.addBelongsToOrHasOnePolymorphic(hash, 'pet', 3, Cat);
   equal(hash['pet_id'], 3, '');
   equal(hash['pet_type'], 'cat', '');
 });

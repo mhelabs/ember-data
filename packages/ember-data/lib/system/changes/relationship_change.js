@@ -89,8 +89,8 @@ DS.RelationshipChange.determineRelationshipType = function(recordType, knownSide
     return knownKind === "belongsTo" ? "oneToNone" : "manyToNone";
   }
   else{
-    if(otherKind === "belongsTo"){
-      return knownKind === "belongsTo" ? "oneToOne" : "manyToOne";
+    if(otherKind === "belongsTo" || otherKind === "hasOne"){
+      return knownKind === "belongsTo" || knownKind === "hasOne" ? "oneToOne" : "manyToOne";
     }
     else{
       return knownKind === "belongsTo" ? "oneToMany" : "manyToMany";
@@ -471,10 +471,10 @@ DS.RelationshipChangeAdd.prototype.sync = function() {
 
 DS.RelationshipChangeRemove.prototype.changeType = "remove";
 DS.RelationshipChangeRemove.prototype.sync = function() {
-  var secondRecordName = this.getSecondRecordName(),
-      firstRecordName = this.getFirstRecordName(),
-      firstRecord = this.getFirstRecord(),
-      secondRecord = this.getSecondRecord();
+  var secondRecordName = this.getSecondRecordName();
+  var firstRecordName = this.getFirstRecordName();
+  var firstRecord = this.getFirstRecord();
+  var secondRecord = this.getSecondRecord();
 
   //Ember.assert("You specified a hasMany (" + hasManyName + ") on " + (!belongsToName && (newParent || oldParent || this.lastParent).constructor) + " but did not specify an inverse belongsTo on " + child.constructor, belongsToName);
   //Ember.assert("You specified a belongsTo (" + belongsToName + ") on " + child.constructor + " but did not specify an inverse hasMany on " + (!hasManyName && (newParent || oldParent || this.lastParentRecord).constructor), hasManyName);

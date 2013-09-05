@@ -154,7 +154,6 @@ DS.ManyArray = DS.RecordArray.extend({
           kind:"hasMany",
           key: name
         });
-        change.hasManyName = name;
 
         this._changesToSync.add(change);
       }

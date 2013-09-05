@@ -247,7 +247,7 @@ DS.Model = Ember.Object.extend(Ember.Evented, LoadPromise, {
 
   clearRelationships: function() {
     this.eachRelationship(function(name, relationship) {
-      if (relationship.kind === 'belongsTo') {
+      if (relationship.kind === 'belongsTo' || relationship.kind === 'hasOne') {
         set(this, name, null);
       } else if (relationship.kind === 'hasMany') {
         this.clearHasMany(relationship);
@@ -374,6 +374,12 @@ DS.Model = Ember.Object.extend(Ember.Evented, LoadPromise, {
     this._data[name] = tupleOrReference;
   },
 
+  materializeHasOne: function(name, tupleOrReference) {
+    if (tupleOrReference) { Ember.assert('materializeHasOne expects a tuple or a reference, not a ' + tupleOrReference, !tupleOrReference || (tupleOrReference.hasOwnProperty('id') && tupleOrReference.hasOwnProperty('type'))); }
+
+    this._data[name] = tupleOrReference;
+  },
+
   _convertTuplesToReferences: function(tuplesOrReferences) {
     return map(tuplesOrReferences, function(tupleOrReference) {
       return this._convertTupleToReference(tupleOrReference);
@@ -420,14 +426,19 @@ DS.Model = Ember.Object.extend(Ember.Evented, LoadPromise, {
     @param binding
   */
   suspendRelationshipObservers: function(callback, binding) {
-    var observers = get(this.constructor, 'relationshipNames').belongsTo;
+    var belongsToRelationships = get(this.constructor, 'relationshipNames').belongsTo;
+    var hasOneRelationships = get(this.constructor, 'relationshipNames').hasOne;
     var self = this;
 
     try {
       this._suspendedRelationships = true;
-      Ember._suspendObservers(self, observers, null, 'belongsToDidChange', function() {
-        Ember._suspendBeforeObservers(self, observers, null, 'belongsToWillChange', function() {
-          callback.call(binding || self);
+      Ember._suspendObservers(self, belongsToRelationships, null, 'belongsToDidChange', function() {
+        Ember._suspendBeforeObservers(self, belongsToRelationships, null, 'belongsToWillChange', function() {
+          Ember._suspendObservers(self, hasOneRelationships, null, 'hasOneDidChange', function() {
+            Ember._suspendBeforeObservers(self, hasOneRelationships, null, 'hasOneWillChange', function() {
+              callback.call(binding || self);
+            });
+          });
         });
       });
     } finally {

@@ -10,6 +10,19 @@ function mustImplement(name) {
   };
 }
 
+function extractEmbeddedHasOneOrBelongsTo(loader, relationship, data, parent, prematerialized) {
+  var foundType = this.extractEmbeddedType(relationship, data),
+      reference = this.extractRecordRepresentation(loader, foundType, data, true);
+  prematerialized[relationship.key] = reference;
+
+  // If the embedded record should also be saved back when serializing the parent,
+  // make sure we set its parent since it will not have an ID.
+  var embeddedType = this.embeddedType(parent.type, relationship.key);
+  if (embeddedType === 'always') {
+    reference.parent = parent;
+  }
+}
+
 /**
   A serializer is responsible for serializing and deserializing a group of
   records.
@@ -247,6 +260,13 @@ DS.Serializer = Ember.Object.extend({
       }
     }, this);
 
+    this.eachEmbeddedHasOne(type, function(name, relationship) {
+      var embeddedData = this.extractEmbeddedData(data, this.keyFor(relationship));
+      if (!isNone(embeddedData)) {
+        this.extractEmbeddedHasOne(loader, relationship, embeddedData, reference, prematerialized);
+      }
+    }, this);
+
     loader.prematerialize(reference, prematerialized);
 
     return reference;
@@ -282,18 +302,8 @@ DS.Serializer = Ember.Object.extend({
     prematerialized[relationship.key] = references;
   },
 
-  extractEmbeddedBelongsTo: function(loader, relationship, data, parent, prematerialized) {
-    var foundType = this.extractEmbeddedType(relationship, data),
-        reference = this.extractRecordRepresentation(loader, foundType, data, true);
-    prematerialized[relationship.key] = reference;
-
-    // If the embedded record should also be saved back when serializing the parent,
-    // make sure we set its parent since it will not have an ID.
-    var embeddedType = this.embeddedType(parent.type, relationship.key);
-    if (embeddedType === 'always') {
-      reference.parent = parent;
-    }
-  },
+  extractEmbeddedHasOne: extractEmbeddedHasOneOrBelongsTo,
+  extractEmbeddedBelongsTo: extractEmbeddedHasOneOrBelongsTo,
 
   /**
     A hook you can use to customize how the record's type is extracted from
@@ -506,6 +516,8 @@ DS.Serializer = Ember.Object.extend({
     record.eachRelationship(function(name, relationship) {
       if (relationship.kind === 'belongsTo') {
         this._addBelongsTo(data, record, name, relationship);
+      } else if (relationship.kind === 'hasOne') {
+        this._addHasOne(data, record, name, relationship);
       } else if (relationship.kind === 'hasMany') {
         this._addHasMany(data, record, name, relationship);
       }
@@ -536,6 +548,30 @@ DS.Serializer = Ember.Object.extend({
     @param {Object} relationship an object representing the relationship
   */
   addBelongsTo: mustImplement('addBelongsTo'),
+
+  /**
+   A hook you can use to add a `hasOne` relationship to the
+   serialized representation.
+
+   The specifics of this hook are very adapter-specific, so there
+   is no default implementation. You can see `DS.RESTSerializer`
+   for an example of an implementation of the `addHasOne` hook.
+
+   The `hasOne` relationship object has the following properties:
+
+   * **type** a subclass of DS.Model that is the type of the
+   relationship. This is the first parameter to DS.hasOne
+   * **options** the options passed to the call to DS.hasOne
+   * **kind** always `hasOne`
+
+   Additional properties may be added in the future.
+
+   @param {any} data the serialized representation that is being built
+   @param {DS.Model} record the record to serialize
+   @param {String} key the key for the serialized object
+   @param {Object} relationship an object representing the relationship
+   */
+  addHasOne: mustImplement('addHasOne'),
 
   /**
     A hook you can use to add a `hasMany` relationship to the
@@ -688,6 +724,39 @@ DS.Serializer = Ember.Object.extend({
 
   /**
     A hook you can use in your serializer subclass to customize
+    how an unmapped `hasOne` relationship is converted into
+    a key.
+
+    By default, this method calls `keyForAttributeName`, so if
+    your naming convention is uniform across attributes and
+    associations, you can use the default here and override
+    just `keyForAttributeName` as needed.
+
+    For example, if the `hasOne` names in your JSON always
+    begin with `BT_` (e.g. `BT_posts`), you can strip out the
+    `BT_` prefix:"
+
+    ```javascript
+    App.MySerializer = DS.Serializer.extend({
+      // ...
+      keyForHasOne: function(type, name) {
+        return name.match(/^BT_(.*)$/)[1].camelize();
+      }
+    });
+    ```
+
+    @param {DS.Model subclass} type the type of the record with
+      the `hasOne` association.
+    @param {String} name the association name to convert into a key
+
+    @returns {String} the key
+  */
+  keyForHasOne: function(type, name) {
+    return this.keyForAttributeName(type, name);
+  },
+
+  /**
+    A hook you can use in your serializer subclass to customize
     how an unmapped `hasMany` relationship is converted into
     a key.
 
@@ -773,6 +842,8 @@ DS.Serializer = Ember.Object.extend({
 
   materializeRelationships: function(record, serialized, prematerialized) {
     record.eachRelationship(function(name, relationship) {
+      var tupleOrReference;
+
       if (relationship.kind === 'hasMany') {
         if (prematerialized && prematerialized.hasOwnProperty(name)) {
           var tuplesOrReferencesOrOpaque = this._convertPrematerializedHasMany(relationship.type, prematerialized[name]);
@@ -780,9 +851,16 @@ DS.Serializer = Ember.Object.extend({
         } else {
           this.materializeHasMany(name, record, serialized, relationship, prematerialized);
         }
+      } else if (relationship.kind === 'hasOne') {
+        if (prematerialized && prematerialized.hasOwnProperty(name)) {
+          tupleOrReference = this._convertTuple(relationship.type, prematerialized[name]);
+          record.materializeHasOne(name, tupleOrReference);
+        } else {
+          this.materializeHasOne(name, record, serialized, relationship, prematerialized);
+        }
       } else if (relationship.kind === 'belongsTo') {
         if (prematerialized && prematerialized.hasOwnProperty(name)) {
-          var tupleOrReference = this._convertTuple(relationship.type, prematerialized[name]);
+          tupleOrReference = this._convertTuple(relationship.type, prematerialized[name]);
           record.materializeBelongsTo(name, tupleOrReference);
         } else {
           this.materializeBelongsTo(name, record, serialized, relationship, prematerialized);
@@ -802,6 +880,21 @@ DS.Serializer = Ember.Object.extend({
     }
 
     record.materializeHasMany(name, tuples);
+  },
+
+  materializeHasOne: function(name, record, hash, relationship) {
+    var key = this._keyForHasOne(record.constructor, relationship.key);
+    var idOrTuple;
+    var tuple;
+
+    // TODO (Medici): Should support polymorphic associations
+    idOrTuple = this.extractHasOne(record.constructor, hash, key);
+
+    if(!isNone(idOrTuple)) {
+      tuple = this._convertTuple(relationship.type, idOrTuple);
+    }
+
+    record.materializeHasOne(name, tuple);
   },
 
   materializeBelongsTo: function(name, record, hash, relationship) {
@@ -961,6 +1054,23 @@ DS.Serializer = Ember.Object.extend({
     return this._keyFromMappingOrHook('keyForBelongsTo', type, name);
   },
 
+  /**
+    @private
+
+    This method is called to get a key used in the data from
+    a hasOne association. It first checks for any mappings before
+    calling the public hook `keyForHasOne`.
+
+    @param {DS.Model subclass} type the type of the record with
+      the `hasOne` association.
+    @param {String} name the association name to convert into a key
+
+    @returns {String} the key
+  */
+  _keyForHasOne: function(type, name) {
+    return this._keyFromMappingOrHook('keyForHasOne', type, name);
+  },
+
   keyFor: function(description) {
     var type = description.parentType,
         name = description.key;
@@ -968,6 +1078,8 @@ DS.Serializer = Ember.Object.extend({
     switch (description.kind) {
       case 'belongsTo':
         return this._keyForBelongsTo(type, name);
+      case 'hasOne':
+        return this._keyForHasOne(type, name);
       case 'hasMany':
         return this._keyForHasMany(type, name);
     }
@@ -1007,6 +1119,24 @@ DS.Serializer = Ember.Object.extend({
   },
 
   /**
+    This method converts the relationship name to a key for serialization,
+    and then invokes the public `addHasOne` hook.
+
+    @method _addHasOne
+    @private
+    @param {any} data the serialized representation that is being built
+    @param {DS.Model} record the record to serialize
+    @param {String} name the relationship name
+    @param {Object} relationship an object representing the relationship
+  */
+  _addHasOne: function(data, record, name, relationship) {
+    var key = this._keyForHasOne(record.constructor, name);
+    this.addHasOne(data, record, key, relationship);
+  },
+
+  /**
+    @private
+
     This method converts the relationship name to a key for serialization,
     and then invokes the public `addHasMany` hook.
 
@@ -1226,11 +1356,19 @@ DS.Serializer = Ember.Object.extend({
 
   eachEmbeddedRecord: function(record, callback, binding) {
     this.eachEmbeddedBelongsToRecord(record, callback, binding);
+    this.eachEmbeddedHasOneRecord(record, callback, binding);
     this.eachEmbeddedHasManyRecord(record, callback, binding);
   },
 
   eachEmbeddedBelongsToRecord: function(record, callback, binding) {
     this.eachEmbeddedBelongsTo(record.constructor, function(name, relationship, embeddedType) {
+      var embeddedRecord = get(record, name);
+      if (embeddedRecord) { callback.call(binding, embeddedRecord, embeddedType); }
+    });
+  },
+
+  eachEmbeddedHasOneRecord: function(record, callback, binding) {
+    this.eachEmbeddedHasOne(record.constructor, function(name, relationship, embeddedType) {
       var embeddedRecord = get(record, name);
       if (embeddedRecord) { callback.call(binding, embeddedRecord, embeddedType); }
     });
@@ -1251,6 +1389,10 @@ DS.Serializer = Ember.Object.extend({
 
   eachEmbeddedBelongsTo: function(type, callback, binding) {
     this.eachEmbeddedRelationship(type, 'belongsTo', callback, binding);
+  },
+
+  eachEmbeddedHasOne: function(type, callback, binding) {
+    this.eachEmbeddedRelationship(type, 'hasOne', callback, binding);
   },
 
   eachEmbeddedRelationship: function(type, kind, callback, binding) {

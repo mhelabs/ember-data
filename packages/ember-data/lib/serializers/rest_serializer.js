@@ -6,6 +6,22 @@ require('ember-data/serializers/json_serializer');
 
 var get = Ember.get;
 
+
+/**
+ @method keyForBelongsToAndHasOne
+ @param type
+ @param name
+ */
+var keyForBelongsToAndHasOne = function(type, name) {
+  var key = this.keyForAttributeName(type, name);
+
+  if (this.embeddedType(type, name)) {
+    return key;
+  }
+
+  return key + "_id";
+};
+
 /**
   @class RESTSerializer
   @namespace DS
@@ -22,20 +38,8 @@ DS.RESTSerializer = DS.JSONSerializer.extend({
     return Ember.String.decamelize(name);
   },
 
-  /**
-    @method keyForBelongsTo
-    @param type
-    @param name
-  */
-  keyForBelongsTo: function(type, name) {
-    var key = this.keyForAttributeName(type, name);
-
-    if (this.embeddedType(type, name)) {
-      return key;
-    }
-
-    return key + "_id";
-  },
+  keyForBelongsTo: keyForBelongsToAndHasOne,
+  keyForHasOne: keyForBelongsToAndHasOne,
 
   /**
     @method keyForHasMany

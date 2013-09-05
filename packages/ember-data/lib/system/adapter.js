@@ -81,8 +81,13 @@ DS.loaderFor = loaderFor;
     * `deleteRecords()`
     * `commit()`
 
+<<<<<<< HEAD
   For an example implementation, see `DS.RestAdapter`, the
   included REST adapter.
+=======
+  For an example implementation, see {{#crossLink "DS.RestAdapter"}} the
+  included REST adapter.{{/crossLink}}.
+>>>>>>> 6a88a0e... Add hasOne association
 
   @class Adapter
   @namespace DS
@@ -503,6 +508,10 @@ DS.Adapter = Ember.Object.extend(DS._Mappable, {
     @param {DS.RelationshipChange} relationship
   */
   dirtyRecordsForHasManyChange: function(dirtySet, parent, relationship) {
+    this.dirtyRecordsForRecordChange(dirtySet, parent);
+  },
+
+  dirtyRecordsForHasOneChange: function(dirtySet, parent) {
     this.dirtyRecordsForRecordChange(dirtySet, parent);
   },
 
