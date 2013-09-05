@@ -302,6 +302,7 @@ var DirtyState = {
     },
 
     didChangeData: didChangeData,
+    loadedData: didChangeData,
 
     becameInvalid: function(record, errors) {
       set(record, 'errors', errors);

@@ -183,6 +183,10 @@ DS.RESTAdapter = DS.Adapter.extend({
     }
   },
 
+  shouldPreserveDirtyRecords: function(association) {
+    return association.kind === 'hasMany';
+  },
+
   /**
     Serializes the record and sends it to the server.
 
@@ -201,20 +205,22 @@ DS.RESTAdapter = DS.Adapter.extend({
     @property {DS.Model} record
   */
   createRecord: function(store, type, record) {
-    var root = this.rootForType(type);
-    var adapter = this;
-    var data = {};
+    waitForParents(record, function() {
+      var root = this.rootForType(type);
+      var adapter = this;
+      var data = {};
 
-    data[root] = this.serialize(record, { includeId: true });
+      data[root] = this.serialize(record, { includeId: true });
 
-    return this.ajax(this.buildURL(root), "POST", {
-      data: data
-    }).then(function(json){
-      adapter.didCreateRecord(store, type, record, json);
-    }, function(xhr) {
-      adapter.didError(store, type, record, xhr);
-      throw xhr;
-    }).then(null, DS.rejectionHandler);
+      return this.ajax(this.buildURL(root), "POST", {
+        data: data
+      }).then(function(json){
+        adapter.didCreateRecord(store, type, record, json);
+      }, function(xhr) {
+        adapter.didError(store, type, record, xhr);
+        throw xhr;
+      }).then(null, DS.rejectionHandler);
+    }, this);
   },
 
   /**
@@ -253,23 +259,25 @@ DS.RESTAdapter = DS.Adapter.extend({
     @param  record
   */
   updateRecord: function(store, type, record) {
-    var id, root, adapter, data;
+    waitForParents(record, function() {
+      var id, root, adapter, data;
 
-    id = get(record, 'id');
-    root = this.rootForType(type);
-    adapter = this;
+      id = get(record, 'id');
+      root = this.rootForType(type);
+      adapter = this;
 
-    data = {};
-    data[root] = this.serialize(record);
+      data = {};
+      data[root] = this.serialize(record);
 
-    return this.ajax(this.buildURL(root, id, record), "PUT",{
-      data: data
-    }).then(function(json){
-      adapter.didUpdateRecord(store, type, record, json);
-    }, function(xhr) {
-      adapter.didError(store, type, record, xhr);
-      throw xhr;
-    }).then(null, DS.rejectionHandler);
+      return this.ajax(this.buildURL(root, id), "PUT",{
+        data: data
+      }).then(function(json){
+          adapter.didUpdateRecord(store, type, record, json);
+        }, function(xhr) {
+          adapter.didError(store, type, record, xhr);
+          throw xhr;
+        }).then(null, DS.rejectionHandler);
+    }, this);
   },
 
   /**
@@ -575,3 +583,30 @@ DS.RESTAdapter = DS.Adapter.extend({
     return since ? query : null;
   }
 });
+
+function waitForParents(record, callback, context) {
+  var observers = new Ember.Set();
+
+  record.eachRelationship(function(name, meta) {
+    var association = get(record, name);
+
+    if (meta.kind === 'belongsTo' && association && get(association, 'isNew')) {
+      var observer = function() {
+        association.removeObserver('id', context, observer);
+        observers.remove(name);
+        finish();
+      };
+
+      association.addObserver('id', context, observer);
+      observers.add(name);
+    }
+  });
+
+  finish();
+
+  function finish() {
+    if (observers.length === 0) {
+      callback.call(context);
+    }
+  }
+}
