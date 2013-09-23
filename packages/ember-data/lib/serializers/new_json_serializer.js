@@ -10,7 +10,7 @@ DS.NewJSONSerializer = Ember.Object.extend({
 
       if (value == null) { return; }
 
-      if (relationship.kind === 'belongsTo') {
+      if (relationship.kind === 'belongsTo' || relationship.kind === 'hasOne') {
         this.deserializeRecordId(data, key, type, value);
       } else if (relationship.kind === 'hasMany') {
         this.deserializeRecordIds(data, key, type, value);
